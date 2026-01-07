@@ -1,4 +1,4 @@
-import { FC } from 'react';
+import { FC, useEffect } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { encode as base64_encode } from 'js-base64';
 import { useForm } from 'react-hook-form';
@@ -30,27 +30,110 @@ interface Props {
   servers: PlexServer[];
 }
 
+const STORAGE_KEY = 'plexio_config_form_values';
+
+// Load form values from localStorage
+const loadFormValues = (): Partial<ConfigurationFormType> => {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      return JSON.parse(stored);
+    }
+  } catch (e) {
+    console.warn('Failed to load form values from localStorage:', e);
+  }
+  return {};
+};
+
+// Save form values to localStorage
+const saveFormValues = (values: Partial<ConfigurationFormType>) => {
+  try {
+    // Save section keys for restoration (sections are server-specific but we can restore by key)
+    const sectionKeys = values.sections?.map((s: any) => s.key) || [];
+    
+    const valuesToSave: Partial<ConfigurationFormType> & { savedSectionKeys?: string[] } = {
+      serverName: values.serverName,
+      discoveryUrl: values.discoveryUrl,
+      streamingUrl: values.streamingUrl,
+      includeTranscodeOriginal: values.includeTranscodeOriginal,
+      includeTranscodeDown: values.includeTranscodeDown,
+      transcodeDownQualities: values.transcodeDownQualities,
+      includePlexTv: values.includePlexTv,
+      customName: values.customName,
+      streamName: values.streamName,
+      showLibraryName: values.showLibraryName,
+      catalogNameMovies: values.catalogNameMovies,
+      catalogNameTvShows: values.catalogNameTvShows,
+      savedSectionKeys: sectionKeys,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(valuesToSave));
+  } catch (e) {
+    console.warn('Failed to save form values to localStorage:', e);
+  }
+};
+
 const ConfigurationForm: FC<Props> = ({ servers }) => {
+  const savedValues = loadFormValues();
+  
   const form = useForm<ConfigurationFormType>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      includeTranscodeOriginal: false,
-      includeTranscodeDown: false,
-      includePlexTv: false,
+      includeTranscodeOriginal: savedValues.includeTranscodeOriginal ?? false,
+      includeTranscodeDown: savedValues.includeTranscodeDown ?? false,
+      includePlexTv: savedValues.includePlexTv ?? false,
       sections: [],
-      customName: '',
-      streamName: '',
-      showLibraryName: false,
-      catalogNameMovies: '',
-      catalogNameTvShows: '',
+      customName: savedValues.customName ?? '',
+      streamName: savedValues.streamName ?? '',
+      showLibraryName: savedValues.showLibraryName ?? false,
+      catalogNameMovies: savedValues.catalogNameMovies ?? '',
+      catalogNameTvShows: savedValues.catalogNameTvShows ?? '',
+      serverName: savedValues.serverName ?? '',
+      discoveryUrl: savedValues.discoveryUrl ?? '',
+      streamingUrl: savedValues.streamingUrl ?? '',
+      transcodeDownQualities: savedValues.transcodeDownQualities ?? [],
     },
   });
+
+  // Save form values to localStorage whenever they change
+  useEffect(() => {
+    const subscription = form.watch((values) => {
+      saveFormValues(values);
+    });
+    return () => subscription.unsubscribe();
+  }, [form]);
 
   const serverName = form.watch('serverName');
   const server = servers.find((s) => s.name == serverName);
 
   const discoveryUrl = form.watch('discoveryUrl');
   const sections = usePMSSections(discoveryUrl, server?.accessToken || null);
+
+  // Restore section selections when sections are loaded
+  useEffect(() => {
+    const savedSectionKeys = (savedValues as any).savedSectionKeys as string[] | undefined;
+    if (savedSectionKeys && savedSectionKeys.length > 0 && sections.length > 0) {
+      // Check if we haven't already restored sections (avoid infinite loop)
+      const currentSections = form.getValues('sections') || [];
+      const currentSectionKeys = currentSections.map((s: any) => s.key);
+      
+      // Only restore if sections haven't been set yet or if they don't match saved keys
+      if (currentSectionKeys.length === 0 || 
+          !savedSectionKeys.every(key => currentSectionKeys.includes(key))) {
+        // Find sections that match saved keys
+        const sectionsToRestore = sections
+          .filter((section: any) => savedSectionKeys.includes(section.key))
+          .map((section: any) => ({
+            key: section.key,
+            title: section.title,
+            type: section.type,
+          }));
+        
+        if (sectionsToRestore.length > 0) {
+          form.setValue('sections', sectionsToRestore, { shouldDirty: false });
+        }
+      }
+    }
+  }, [sections, form, savedValues]);
 
   function onSubmit(configuration: any, event: any) {
     configuration.version = __APP_VERSION__;
