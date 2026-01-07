@@ -14,6 +14,7 @@ from plexio.dependencies import (
 )
 from plexio.models import PLEX_TO_STREMIO_MEDIA_TYPE, STREMIO_TO_PLEX_MEDIA_TYPE
 from plexio.models.addon import AddonConfiguration
+from plexio.models.plex import PlexMediaType
 from plexio.models.stremio import (
     StremioCatalog,
     StremioCatalogManifest,
@@ -48,15 +49,31 @@ async def get_manifest(
 ) -> StremioManifest:
     catalogs = []
     description = 'Play movies and series from plex.tv.'
-    name = 'Plexio'
+    
+    # Use custom name if provided, otherwise use default
+    if configuration is not None:
+        if configuration.custom_name:
+            name = configuration.custom_name
+        else:
+            name = f'Plexio ({configuration.server_name})'
+    else:
+        name = "Plexio"
 
     if configuration is not None:
         for section in configuration.sections:
+            # Use custom catalog name if provided, otherwise use default format
+            if section.type == PlexMediaType.movie and configuration.catalog_name_movies:
+                catalog_name = configuration.catalog_name_movies
+            elif section.type == PlexMediaType.show and configuration.catalog_name_tv_shows:
+                catalog_name = configuration.catalog_name_tv_shows
+            else:
+                catalog_name = f'{section.title} | {configuration.server_name}'
+            
             catalogs.append(
                 StremioCatalogManifest(
                     id=section.key,
                     type=PLEX_TO_STREMIO_MEDIA_TYPE[section.type],
-                    name=f'{section.title} | {configuration.server_name}',
+                    name=catalog_name,
                     extra=[
                         {'name': 'skip', 'isRequired': False},
                         {'name': 'search', 'isRequired': False},
@@ -65,7 +82,6 @@ async def get_manifest(
                 ),
             )
 
-        name += f' ({configuration.server_name})'
         description += f' Your installation ID: {installation_id}'
 
     return StremioManifest(

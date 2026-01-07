@@ -5,7 +5,7 @@ from plexio.cache import CacheType
 
 class Settings(BaseSettings):
     cors_origin_regex: str = (
-        r'https?:\/\/localhost:\d+|.*plexio.stream|.*strem.io|.*stremio.com'
+        r'https?:\/\/localhost(:\d+)?|.*plexio.stream|.*strem.io|.*stremio.com'
     )
     plex_requests_timeout: int = 20
     cache_type: CacheType = CacheType.memory

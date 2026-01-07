@@ -76,13 +76,15 @@ export const DiscoveryUrlField: FC<Props> = ({ form, server }) => {
                   <SelectValue placeholder="Select a discovery url" />
                 </SelectTrigger>
               </FormControl>
-              {server.connections.filter((conn: any) => !conn.local).length >
-                0 && (
+              {server.connections && server.connections.length > 0 && (
                 <SelectContent>
-                  {server.connections
-                    .filter((conn: any) => !conn.local)
-                    .map((conn: any, index: number) => (
+                  {server.connections.map((conn: any, index: number) => (
                       <SelectItem key={index} value={conn.uri}>
+                      {conn.local && (
+                        <Badge className="mr-1.5" variant="secondary">
+                          local
+                        </Badge>
+                      )}
                         {conn.relay && (
                           <Badge className="mr-1.5" variant="secondary">
                             relay

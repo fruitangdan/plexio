@@ -21,6 +21,11 @@ class AddonConfiguration(BaseModel):
     include_transcode_down: bool = False
     transcode_down_qualities: list[Resolution] = Field(default_factory=list)
     include_plex_tv: bool = False
+    custom_name: str | None = None
+    stream_name: str | None = None
+    show_library_name: bool = False
+    catalog_name_movies: str | None = None
+    catalog_name_tv_shows: str | None = None
 
     _extract_discovery_url = field_validator('discovery_url', mode='before')(URL)
     _extract_streaming_url = field_validator('streaming_url', mode='before')(URL)

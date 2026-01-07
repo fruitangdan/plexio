@@ -12,8 +12,13 @@ const usePMSSections = (serverUrl: string, plexToken: PlexToken) => {
     }
 
     const fetchSections = async (): Promise<void> => {
+      try {
       const sectionsData = await getSections(serverUrl, plexToken);
       setSections(sectionsData);
+      } catch (error) {
+        console.error('Failed to fetch sections:', error);
+        setSections([]); // Set empty array on error to stop the spinner
+      }
     };
 
     void fetchSections();

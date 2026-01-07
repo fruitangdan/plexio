@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime
 from enum import Enum
 
@@ -94,6 +95,11 @@ class PlexMediaMeta(BaseModel):
     writer: list = Field(alias='Writer', default_factory=list)
     role: list = Field(alias='Role', default_factory=list)
     producer: list = Field(alias='Producer', default_factory=list)
+    # Episode-specific fields
+    grandparent_title: str | None = None
+    parent_title: str | None = None
+    index: int | None = None
+    parent_index: int | None = None
 
     def get_year(self):
         if self.year:
@@ -166,8 +172,56 @@ class PlexMediaMeta(BaseModel):
 
         streams = []
         for i, media in enumerate(self.media):
-            name = f'{configuration.server_name} {self.library_section_title}'
+            # Extract resolution and format as "1080p"
+            video_resolution = media.get("videoResolution", "")
+            resolution_display = ""
+            if video_resolution:
+                # videoResolution might be "1080", "1920x1080", or similar
+                # Extract the height (last number)
+                numbers = re.findall(r'\d+', video_resolution)
+                if numbers:
+                    height = numbers[-1]  # Get the last number (height)
+                    resolution_display = f"{height}p"
+            
+            # Determine stream name based on configuration
+            if configuration.stream_name:
+                if configuration.show_library_name:
+                    # Show library name on a new line below stream name with parentheses
+                    if resolution_display:
+                        name = f'{configuration.stream_name}\n({self.library_section_title})\n{resolution_display}'
+                    else:
+                        name = f'{configuration.stream_name}\n({self.library_section_title})'
+                else:
+                    # Just use the custom stream name with resolution
+                    if resolution_display:
+                        name = f'{configuration.stream_name}\n{resolution_display}'
+                    else:
+                        name = configuration.stream_name
+            else:
+                # Default: use server name and library section title with resolution
+                if resolution_display:
+                    name = f'{configuration.server_name} {self.library_section_title}\n{resolution_display}'
+                else:
+                    name = f'{configuration.server_name} {self.library_section_title}'
+            
             filename = os.path.basename(media['Part'][0]['file'])
+            file_size_bytes = media['Part'][0].get('size')
+
+            # Format file size to human-readable format
+            def format_file_size(size_bytes):
+                """Convert bytes to human-readable format"""
+                if not size_bytes:
+                    return None
+                size = float(size_bytes)
+                for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+                    if size < 1024.0:
+                        if unit == 'B':
+                            return f"{int(size)} {unit}"
+                        return f"{size:.0f} {unit}"
+                    size /= 1024.0
+                return f"{size:.0f} PB"
+            
+            file_size_display = format_file_size(file_size_bytes)
 
             audio_languages = set()
             subtitles_languages = set()
@@ -196,20 +250,47 @@ class PlexMediaMeta(BaseModel):
                             }
                         )
 
-            description_template = '{filename}\n{quality}\n{languages}'
-            languages = '/'.join(sorted(audio_languages))
-            if subtitles_languages:
-                languages += f' ({"/".join(sorted(subtitles_languages))})'
+            # Format description based on media type
+            # Filter out 'Unknown' from subtitles languages
+            filtered_subtitles = {lang for lang in subtitles_languages if lang != 'Unknown'}
+            
+            # Format languages on one line with emojis and bullet separator
+            # For subtitles: only show English if available, otherwise show nothing
+            languages_parts = []
+            if audio_languages:
+                languages_parts.append(f'🎧 {" ".join(sorted(audio_languages))}')
+            # Check if English (🇬🇧) is in subtitles
+            if '🇬🇧' in filtered_subtitles:
+                languages_parts.append('💬 🇬🇧')
+            languages = '  ∙  '.join(languages_parts) if languages_parts else ''
+            
+            if self.type == PlexMediaType.episode and self.grandparent_title:
+                # For episodes: "Series Name\nEpisode Title\n💾 200 MB\n[languages]"
+                description = f'{self.grandparent_title}\n{self.title}'
+                if file_size_display:
+                    description += f'\n💾 {file_size_display}'
+                if languages:
+                    description += f'\n{languages}'
+            elif self.type == PlexMediaType.movie:
+                # For movies: "Movie Title\n💾 200 MB\n[languages]"
+                description = self.title
+                if file_size_display:
+                    description += f'\n💾 {file_size_display}'
+                if languages:
+                    description += f'\n{languages}'
+            else:
+                # Fallback: show filename, file size, and languages
+                description = filename
+                if file_size_display:
+                    description += f'\n💾 {file_size_display}'
+                if languages:
+                    description += f'\n{languages}'
 
             quality_description = f'Direct Play {media.get("videoResolution", "")}'
             streams.append(
                 StremioStream(
                     name=name,
-                    description=description_template.format(
-                        filename=filename,
-                        quality=quality_description,
-                        languages=languages,
-                    ),
+                    description=description,
                     url=str(
                         configuration.streaming_url
                         / media['Part'][0]['key'][1:]
@@ -243,11 +324,7 @@ class PlexMediaMeta(BaseModel):
                 streams.append(
                     StremioStream(
                         name=name,
-                        description=description_template.format(
-                            filename=filename,
-                            quality=quality_description,
-                            languages=languages,
-                        ),
+                        description=description,
                         url=str(transcode_url % {'videoQuality': 100}),
                         subtitles=external_subtitles,
                         behaviorHints={'bingeGroup': quality_description},
@@ -263,11 +340,7 @@ class PlexMediaMeta(BaseModel):
                     streams.append(
                         StremioStream(
                             name=name,
-                            description=description_template.format(
-                                filename=filename,
-                                quality=quality_description,
-                                languages=languages,
-                            ),
+                            description=description,
                             url=str(transcode_url % quality_params['plex_args']),
                             subtitles=external_subtitles,
                             behaviorHints={'bingeGroup': quality_description},

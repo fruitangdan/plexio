@@ -2,8 +2,10 @@ import axios from 'axios';
 
 export const isServerAliveRemote = async (serverUrl: string, token: string) => {
   try {
+    // Use port 80 (nginx proxy) instead of the Vite dev server port
+    const apiOrigin = window.location.origin.replace(/:\d+$/, '');
     const response = await axios.get(
-      `${window.location.origin}/api/v1/test-connection`,
+      `${apiOrigin}/api/v1/test-connection`,
       {
         timeout: 25000,
         params: {
