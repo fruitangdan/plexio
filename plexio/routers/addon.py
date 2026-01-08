@@ -188,30 +188,50 @@ async def get_stream(
     stremio_type: StremioMediaType,
     media_id: str,
 ) -> StremioStreamsResponse:
-    if media_id.startswith('tt'):
-        plex_id = await stremio_to_plex_id(
+    try:
+        if media_id.startswith('tt'):
+            plex_id = await stremio_to_plex_id(
+                client=http,
+                url=configuration.discovery_url,
+                token=configuration.access_token,
+                cache=cache,
+                stremio_id=media_id,
+                media_type=STREMIO_TO_PLEX_MEDIA_TYPE[stremio_type],
+            )
+            if not plex_id:
+                print(f"Could not find Plex ID for IMDB ID: {media_id}")
+                return StremioStreamsResponse()
+        elif media_id.startswith('plexio:'):
+            plex_id = plexio_id_to_guid(media_id)
+        else:
+            plex_id = media_id
+
+        print(f"Fetching media for Plex ID: {plex_id}, type: {stremio_type}")
+        media = await get_media(
             client=http,
             url=configuration.discovery_url,
             token=configuration.access_token,
-            cache=cache,
-            stremio_id=media_id,
-            media_type=STREMIO_TO_PLEX_MEDIA_TYPE[stremio_type],
+            guid=plex_id,
         )
-        if not plex_id:
+        
+        if not media:
+            print(f"No media found for Plex ID: {plex_id}")
             return StremioStreamsResponse()
-    elif media_id.startswith('plexio:'):
-        plex_id = plexio_id_to_guid(media_id)
-    else:
-        plex_id = media_id
-
-    media = await get_media(
-        client=http,
-        url=configuration.discovery_url,
-        token=configuration.access_token,
-        guid=plex_id,
-    )
-    return StremioStreamsResponse(
-        streams=chain.from_iterable(
+        
+        print(f"Found {len(media)} media items, generating streams")
+        streams = list(chain.from_iterable(
             meta.get_stremio_streams(configuration) for meta in media
-        ),
-    )
+        ))
+        print(f"Generated {len(streams)} streams")
+        return StremioStreamsResponse(streams=streams)
+    except HTTPException:
+        # Re-raise HTTP exceptions (they already have proper status codes)
+        raise
+    except Exception as e:
+        print(f"Error in get_stream for {media_id}: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=502,
+            detail=f'Error fetching streams: {str(e)}',
+        ) from e

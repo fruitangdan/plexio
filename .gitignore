@@ -8,3 +8,12 @@ __pycache__
 .venv
 
 frontend/node_modules
+node_modules
+
+# Electron build artifacts
+dist/
+release/
+build/
+*.dmg
+*.zip
+electron/icon.icns

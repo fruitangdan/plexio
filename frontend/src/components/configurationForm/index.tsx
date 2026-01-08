@@ -97,7 +97,25 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
   // Save form values to localStorage whenever they change
   useEffect(() => {
     const subscription = form.watch((values) => {
-      saveFormValues(values);
+      // Filter out undefined sections and ensure all required properties exist
+      const validSections = values.sections?.filter(
+        (s): s is { title: string; key: string; type: string } =>
+          s !== undefined && 
+          s.title !== undefined && 
+          s.key !== undefined && 
+          s.type !== undefined
+      ) || [];
+      
+      // Filter out undefined items from transcodeDownQualities
+      const validQualities = values.transcodeDownQualities?.filter(
+        (q): q is string => q !== undefined
+      ) || [];
+      
+      saveFormValues({
+        ...values,
+        sections: validSections,
+        transcodeDownQualities: validQualities,
+      });
     });
     return () => subscription.unsubscribe();
   }, [form]);
@@ -106,7 +124,7 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
   const server = servers.find((s) => s.name == serverName);
 
   const discoveryUrl = form.watch('discoveryUrl');
-  const sections = usePMSSections(discoveryUrl, server?.accessToken || null);
+  const { sections, error: sectionsError, loading: sectionsLoading } = usePMSSections(discoveryUrl, server?.accessToken || null);
 
   // Restore section selections when sections are loaded
   useEffect(() => {
@@ -206,66 +224,86 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
 
     const encodedConfiguration = base64_encode(JSON.stringify(configuration));
     
+    // Check if we're in Electron
+    const isElectron = (window as any).__ELECTRON__ === true;
+    const backendPort = isElectron ? 8000 : 80; // Electron uses 8000, Docker uses 80 (nginx)
+    
     // Use the Mac's IP address for the addon URL so FireTV and other devices can access it
-    // Try multiple methods to detect the local network IP
-    let addonOrigin = window.location.origin.replace(/:\d+$/, '');
+    // Priority: discoveryUrl > streamingUrl > server connections > current host
+    let addonOrigin = '';
+    let detectedIp = '';
     
     try {
-      const currentHost = window.location.hostname;
+      // Method 1: Extract IP from discovery URL (highest priority - most reliable)
+      if (configuration.discoveryUrl) {
+        try {
+          const discoveryUrlObj = new URL(configuration.discoveryUrl);
+          const discoveryHost = discoveryUrlObj.hostname;
+          // Check if it's a direct IP address
+          if (discoveryHost.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+            detectedIp = discoveryHost;
+            addonOrigin = `http://${discoveryHost}:${backendPort}`;
+            console.log('Using IP from discovery URL:', addonOrigin);
+          }
+        } catch (e) {
+          console.warn('Failed to parse discovery URL:', e);
+        }
+      }
       
-      // Method 1: If already using an IP address, use it
-      if (currentHost.match(/^\d+\.\d+\.\d+\.\d+$/)) {
-        addonOrigin = `http://${currentHost}`;
-      } else if (currentHost === 'localhost' || currentHost === '127.0.0.1') {
-        // Method 2: Extract IP from streaming URL (most reliable for local connections)
+      // Method 2: Extract IP from streaming URL (fallback)
+      if (!detectedIp && configuration.streamingUrl) {
         try {
           const streamingUrlObj = new URL(configuration.streamingUrl);
           const streamingHost = streamingUrlObj.hostname;
           if (streamingHost.match(/^\d+\.\d+\.\d+\.\d+$/)) {
-            addonOrigin = `http://${streamingHost}`;
+            detectedIp = streamingHost;
+            addonOrigin = `http://${streamingHost}:${backendPort}`;
+            console.log('Using IP from streaming URL:', addonOrigin);
           }
         } catch (e) {
-          // streamingUrl might not be set yet, try discovery URL
-        }
-        
-        // Method 3: If streaming URL didn't work, try discovery URL
-        if (addonOrigin.includes('localhost') && configuration.discoveryUrl) {
-          try {
-            const discoveryUrlObj = new URL(configuration.discoveryUrl);
-            const discoveryHost = discoveryUrlObj.hostname;
-            if (discoveryHost.match(/^\d+\.\d+\.\d+\.\d+$/)) {
-              addonOrigin = `http://${discoveryHost}`;
-            }
-          } catch (e) {
-            // discoveryUrl might not be a valid URL
-          }
-        }
-        
-        // Method 4: If still on localhost, try to extract from server connections
-        if (addonOrigin.includes('localhost') && server?.connections) {
-          // Find a local connection with an IP address
-          const localConnection = server.connections.find(
-            (conn: any) => conn.local && conn.address && conn.address.match(/^\d+\.\d+\.\d+\.\d+$/)
-          );
-          if (localConnection) {
-            addonOrigin = `http://${localConnection.address}`;
-          }
-        }
-        
-        // If we still couldn't determine the IP, keep localhost and log a warning
-        if (addonOrigin.includes('localhost')) {
-          console.warn(
-            'Could not automatically detect network IP address. ' +
-            'The addon URL will use localhost, which may not work from other devices. ' +
-            'You may need to manually edit the URL to use your Mac\'s IP address (e.g., http://192.168.x.x)'
-          );
+          console.warn('Failed to parse streaming URL:', e);
         }
       }
+      
+      // Method 3: Extract from server connections (if available)
+      if (!detectedIp && server?.connections) {
+        // Find a local connection with an IP address
+        const localConnection = server.connections.find(
+          (conn: any) => conn.local && conn.address && conn.address.match(/^\d+\.\d+\.\d+\.\d+$/)
+        );
+        if (localConnection) {
+          detectedIp = localConnection.address;
+          addonOrigin = `http://${localConnection.address}:${backendPort}`;
+          console.log('Using IP from server connections:', addonOrigin);
+        }
+      }
+      
+      // Method 4: Check if current host is already an IP
+      if (!detectedIp) {
+        const currentHost = window.location.hostname;
+        if (currentHost.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+          detectedIp = currentHost;
+          addonOrigin = `http://${currentHost}:${backendPort}`;
+          console.log('Using IP from current host:', addonOrigin);
+        }
+      }
+      
+      // Fallback: If we still couldn't determine the IP, use localhost (won't work from FireTV)
+      if (!detectedIp) {
+        addonOrigin = `http://localhost:${backendPort}`;
+        console.error(
+          '⚠️ WARNING: Could not automatically detect network IP address. ' +
+          `The addon URL will use localhost:${backendPort}, which WILL NOT work from FireTV or other devices. ` +
+          'Please check your discovery URL contains a valid IP address (e.g., http://192.168.x.x:32400)'
+        );
+      }
     } catch (e) {
-      console.warn('Failed to determine network IP, using current origin:', e);
+      console.error('Failed to determine network IP:', e);
+      addonOrigin = `http://localhost:${backendPort}`;
     }
     
     const addonUrl = `${addonOrigin}/${uuidv4()}/${encodedConfiguration}/manifest.json`;
+    console.log('Generated addon URL:', addonUrl);
 
     if (event.nativeEvent.submitter.name === 'clipboard') {
       navigator.clipboard.writeText(addonUrl);
@@ -288,7 +326,7 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
           </>
         )}
         {discoveryUrl && (
-          <SectionsField form={form} sections={sections}></SectionsField>
+          <SectionsField form={form} sections={sections} error={sectionsError} loading={sectionsLoading}></SectionsField>
         )}
         <CustomNameField form={form} />
         <StreamNameField form={form} />

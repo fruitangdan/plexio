@@ -14,9 +14,11 @@ import {
 interface Props {
   form: UseFormReturn<ConfigurationFormType>;
   sections: any[];
+  error: string | null;
+  loading: boolean;
 }
 
-export const SectionsField: FC<Props> = ({ form, sections }) => {
+export const SectionsField: FC<Props> = ({ form, sections, error, loading }) => {
   return (
     <FormField
       control={form.control}
@@ -29,7 +31,27 @@ export const SectionsField: FC<Props> = ({ form, sections }) => {
               Select the Plex library sections to access in Stremio.
             </FormDescription>
           </div>
-          {sections.length > 0 ? (
+          {error ? (
+            <div className="flex flex-col items-center justify-center py-8">
+              <div className="text-red-500 text-center">
+                <p className="font-semibold mb-2">Error loading sections</p>
+                <p className="text-sm">{error}</p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Make sure your Plex server is running and accessible at the selected discovery URL.
+                </p>
+              </div>
+            </div>
+          ) : loading ? (
+            <div className="flex flex-col items-center justify-center">
+              <div className="w-16 h-16 rounded-full animate-spin border-t-4 border-muted-foreground" />
+              <span className="mt-4 text-lg text-muted-foreground text-center">
+                Loading sections from the server using the selected discovery
+                URL.
+                <br />
+                If this takes too long, try selecting a different discovery URL.
+              </span>
+            </div>
+          ) : sections.length > 0 ? (
             sections.map((item: any) => (
               <FormField
                 key={item.key}
@@ -71,14 +93,10 @@ export const SectionsField: FC<Props> = ({ form, sections }) => {
               />
             ))
           ) : (
-            <div className="flex flex-col items-center justify-center">
-              <div className="w-16 h-16 rounded-full animate-spin border-t-4 border-muted-foreground" />
-              <span className="mt-4 text-lg text-muted-foreground text-center">
-                Loading sections from the server using the selected discovery
-                URL.
-                <br />
-                If this takes too long, try selecting a different discovery URL.
-              </span>
+            <div className="flex flex-col items-center justify-center py-8">
+              <p className="text-muted-foreground text-center">
+                No sections found. Make sure your Plex server has library sections configured.
+              </p>
             </div>
           )}
           <FormMessage />

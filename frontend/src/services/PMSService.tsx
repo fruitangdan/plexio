@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getApiOrigin } from '@/lib/apiOrigin';
 
 export const isServerAliveLocal = async (serverUrl: string, token: string) => {
   try {
@@ -50,21 +51,24 @@ export const getSections = async (
     
     // Use the backend API instead of connecting directly to Plex
     // This avoids CORS issues and network access problems
-    // Use port 80 (nginx proxy) instead of the Vite dev server port
-    const apiOrigin = window.location.origin.replace(/:\d+$/, '');
+    const apiOrigin = getApiOrigin();
     const apiUrl = `${apiOrigin}/api/v1/sections`;
     console.log('Fetching sections from:', apiUrl, 'with URL:', convertedUrl);
+    
+    console.log('Making request to:', apiUrl, 'with params:', { url: convertedUrl, token: token ? `${token.substring(0, 10)}...` : 'missing' });
     
     const response = await axios.get(
       apiUrl,
       {
         timeout: 30000,
-      params: {
+        params: {
           url: convertedUrl,
           token: token,
         },
       },
     );
+
+    console.log('Received response:', response.status, response.data);
 
     const sections = response.data?.sections;
 
@@ -79,9 +83,24 @@ export const getSections = async (
       throw new Error(`Failed to fetch sections: ${response.data.error}`);
     }
 
+    console.log('Returning sections:', sections.length);
     return sections;
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error fetching Plex sections:', error);
-    throw error;
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // that falls out of the range of 2xx
+      console.error('Response status:', error.response.status);
+      console.error('Response data:', error.response.data);
+      throw new Error(`Server error: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
+    } else if (error.request) {
+      // The request was made but no response was received
+      console.error('No response received:', error.request);
+      throw new Error('No response from server - request timed out or server is unreachable');
+    } else {
+      // Something happened in setting up the request that triggered an Error
+      console.error('Request setup error:', error.message);
+      throw error;
+    }
   }
 };

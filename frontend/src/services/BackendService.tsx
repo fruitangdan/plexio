@@ -1,9 +1,9 @@
 import axios from 'axios';
+import { getApiOrigin } from '@/lib/apiOrigin';
 
 export const isServerAliveRemote = async (serverUrl: string, token: string) => {
   try {
-    // Use port 80 (nginx proxy) instead of the Vite dev server port
-    const apiOrigin = window.location.origin.replace(/:\d+$/, '');
+    const apiOrigin = getApiOrigin();
     const response = await axios.get(
       `${apiOrigin}/api/v1/test-connection`,
       {
