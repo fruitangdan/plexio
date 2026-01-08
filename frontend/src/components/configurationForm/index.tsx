@@ -1,4 +1,4 @@
-import { FC, useEffect } from 'react';
+import { FC, useEffect, useState } from 'react';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { encode as base64_encode } from 'js-base64';
 import { useForm } from 'react-hook-form';
@@ -74,6 +74,7 @@ const saveFormValues = (values: Partial<ConfigurationFormType>) => {
 
 const ConfigurationForm: FC<Props> = ({ servers }) => {
   const savedValues = loadFormValues();
+  const [copied, setCopied] = useState(false);
   
   const form = useForm<ConfigurationFormType>({
     resolver: zodResolver(formSchema),
@@ -307,6 +308,10 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
 
     if (event.nativeEvent.submitter.name === 'clipboard') {
       navigator.clipboard.writeText(addonUrl);
+      setCopied(true);
+      setTimeout(() => {
+        setCopied(false);
+      }, 5000);
     } else {
       window.location.href = addonUrl.replace(/https?:\/\//, 'stremio://');
     }
@@ -337,17 +342,23 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
         <IncludeTranscodeDownFields form={form} />
         <IncludePlexTvField form={form} />
 
-        <div className="flex items-center space-x-1 justify-center p-3">
-          <Button className="h-11 w-10 p-2" type="submit" name="clipboard">
-            <Icons.clipboard />
-          </Button>
-          <Button
-            className="h-11 rounded-md px-8 text-xl"
-            type="submit"
-            name="install"
-          >
-            Install
-          </Button>
+        <div className="space-y-2 p-3">
+          <div className="space-y-1">
+            <div className="text-sm font-medium">Manifest URL</div>
+            <div className="text-sm text-muted-foreground">
+              Note: This must be installed directly on Stremio on your FireTV. On FireTV for Stremio:
+              <ul className="list-disc list-inside mt-1 space-y-0.5">
+                <li>Set <b>Settings</b> &gt; <b>Interface</b> &gt; <b>Platform</b> to <b>&quot;Android TV&quot;</b>.</li>
+                <li>Go to <b>Addons</b> &gt; <b>Add addon</b> &amp; paste the URL</li>
+              </ul>
+            </div>
+          </div>
+          <div className="flex items-center justify-center">
+            <Button className="h-11 px-4" type="submit" name="clipboard">
+              <Icons.clipboard className="mr-2 h-4 w-4" />
+              {copied ? 'Copied' : 'Copy Manifest URL'}
+            </Button>
+          </div>
         </div>
       </form>
     </Form>

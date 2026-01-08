@@ -19,8 +19,10 @@
         "mac": {
             "category": "public.app-category.utilities",
             "target": [{
-                "target": "dmg",
-                "arch": ["x64", "arm64"]
+                "target": "dir",
+                "arch": [
+                    "arm64"
+                ]
             }],
             "icon": "electron/icon.icns",
             "hardenedRuntime": false,
@@ -33,29 +35,42 @@
             "electron/**/*",
             "frontend/dist/**/*",
             "dist/backend/**/*",
-            "!**/node_modules/**/*",
             "!**/__pycache__/**/*",
-            "!**/*.pyc"
+            "!**/*.pyc",
+            "!**/node_modules/**/{CHANGELOG.md,README.md,README,readme.md,readme}",
+            "!**/node_modules/**/{test,__tests__,tests,powered-test,example,examples}",
+            "!**/node_modules/**/*.d.ts",
+            "!**/node_modules/**/*.map",
+            "!**/node_modules/**/.{bin,eslintrc,nycrc,prettierrc}",
+            "!**/node_modules/**/{.eslintignore,.eslintcache,.stylelintcache}",
+            "!**/node_modules/**/{.yarn-integrity,.yarn-metadata.json}"
         ],
         "extraResources": [{
                 "from": "dist/backend/backend",
                 "to": "backend/backend",
-                "filter": ["**/*"]
+                "filter": [
+                    "**/*"
+                ]
             },
             {
                 "from": "frontend/dist",
                 "to": "frontend/dist",
-                "filter": ["**/*"]
+                "filter": [
+                    "**/*"
+                ]
             }
         ],
         "directories": {
             "output": "release"
         }
     },
+    "dependencies": {
+        "menubar": "^9.5.2"
+    },
     "devDependencies": {
+        "concurrently": "^8.2.2",
         "electron": "^28.0.0",
         "electron-builder": "^24.9.1",
-        "concurrently": "^8.2.2",
         "wait-on": "^7.2.0"
     }
 }
