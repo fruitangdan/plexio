@@ -23,12 +23,19 @@ Installation:
   - Set **Settings** > **Interface** > **Platform** to **"Android TV"**
   - Go to **Addons** > **Add addon** & paste the URL
 
-Screenshots:
+### Screenshots
 
-![Plexio Mac 1](./docs/images/plexio-mac-1.jpg)
-![Plexio Mac 2](./docs/images/plexio-mac-2.jpg)
-![Plexio Mac 3](./docs/images/plexio-mac-3.jpg)
-![Plexio Mac 4](./docs/images/plexio-mac-4.jpg)
+#### Stream - TV Show
+![Stream - TV Show](./docs/images/plexio-mac-1.jpg)
+
+#### Stream - Movie
+![Stream - Movie](./docs/images/plexio-mac-2.jpg)
+
+#### Catalog - Movies
+![Catalog - Movies](./docs/images/plexio-mac-3.jpg)
+
+#### Catalog - Series
+![Catalog - Series](./docs/images/plexio-mac-4.jpg)
 
 ---
 
