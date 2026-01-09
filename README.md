@@ -1,5 +1,39 @@
 # Plexio: Plex Interaction for Stremio
 
+## Plexio modified to work with Mac Plex Server & Stremio on Fire TV
+
+This fork of Plexio has been modified to work for one particular setup (which the original addon would not work for):
+
+- Plex Server Running on Mac (ARM)
+- Primarily Streaming on Stremio for FireTV (on same WiFi network - streaming only locally)
+
+Other improvements have been added:
+
+- Packaged to a simple Mac app that can be launched on the Mac with the Plex Server (no need to install Docker)
+- Improved the formatting of the streams (e.g. showing real Movie, Show & Episode names instead of the long filenames)
+
+Installation:
+
+- Download the dmg (under Releases)
+- Install this on the Mac with your Plex Server
+- This will add a menubar icon
+- Click the menubar icon > **Show Config Page**
+- When configuring, choose Local URL's for Discovery & Streaming
+- Copy the manifest URL and install directly in Stremio on Fire TV:
+  - Set **Settings** > **Interface** > **Platform** to **"Android TV"**
+  - Go to **Addons** > **Add addon** & paste the URL
+
+Screenshots:
+
+![Plexio Mac 1](./docs/images/plexio-mac-1.jpg)
+![Plexio Mac 2](./docs/images/plexio-mac-2.jpg)
+![Plexio Mac 3](./docs/images/plexio-mac-3.jpg)
+![Plexio Mac 4](./docs/images/plexio-mac-4.jpg)
+
+---
+
+## Plexio
+
 ⚠️ Plexio is an independent project and is not in any way affiliated with Plex or Stremio. ⚠️
 
 Plexio is an addon that bridges the gap between Plex and Stremio, enabling seamless 

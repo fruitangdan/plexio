@@ -13,6 +13,7 @@ node_modules
 # Electron build artifacts
 dist/
 release/
+releases/
 build/
 *.dmg
 *.zip
