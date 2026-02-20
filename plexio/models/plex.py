@@ -2,8 +2,10 @@ import os
 import re
 from datetime import datetime
 from enum import Enum
+from urllib.parse import quote, urlencode
 
 from pydantic import BaseModel, ConfigDict, Field
+from yarl import URL
 
 from plexio.models.utils import get_flag_emoji, guid_to_plexio_id, to_camel
 
@@ -167,8 +169,22 @@ class PlexMediaMeta(BaseModel):
             genres=[g['tag'] for g in self.genre],
         )
 
-    def get_stremio_streams(self, configuration):
+    def get_stremio_streams(
+        self,
+        configuration,
+        public_base_url: str | None = None,
+        proxy_prefix: str = '',
+    ):
         from plexio.models.stremio import StremioStream
+
+        def _stream_url(plex_url: URL) -> str:
+            """Return public proxy URL or direct Plex URL."""
+            if not public_base_url or not proxy_prefix:
+                return str(plex_url)
+            qdict = dict(plex_url.query)
+            qdict.pop('X-Plex-Token', None)
+            relative = plex_url.path + ('?' + urlencode(qdict) if qdict else '')
+            return public_base_url + proxy_prefix + '?q=' + quote(relative)
 
         streams = []
         for i, media in enumerate(self.media):
@@ -236,17 +252,16 @@ class PlexMediaMeta(BaseModel):
                         get_flag_emoji(part_stream.get('languageTag', 'Unknown')),
                     )
                     if 'key' in part_stream:
+                        sub_url = (
+                            configuration.streaming_url
+                            / part_stream['key'][1:]
+                            % {'X-Plex-Token': configuration.access_token}
+                        )
                         external_subtitles.append(
                             {
                                 'id': str(part_stream['id']),
                                 'lang': part_stream['displayTitle'],
-                                'url': str(
-                                    configuration.streaming_url
-                                    / part_stream['key'][1:]
-                                    % {
-                                        'X-Plex-Token': configuration.access_token,
-                                    }
-                                ),
+                                'url': _stream_url(sub_url),
                             }
                         )
 
@@ -287,17 +302,16 @@ class PlexMediaMeta(BaseModel):
                     description += f'\n{languages}'
 
             quality_description = f'Direct Play {media.get("videoResolution", "")}'
+            direct_url = (
+                configuration.streaming_url
+                / media['Part'][0]['key'][1:]
+                % {'X-Plex-Token': configuration.access_token}
+            )
             streams.append(
                 StremioStream(
                     name=name,
                     description=description,
-                    url=str(
-                        configuration.streaming_url
-                        / media['Part'][0]['key'][1:]
-                        % {
-                            'X-Plex-Token': configuration.access_token,
-                        },
-                    ),
+                    url=_stream_url(direct_url),
                     subtitles=external_subtitles,
                     behaviorHints={'bingeGroup': quality_description},
                 ),
@@ -325,7 +339,7 @@ class PlexMediaMeta(BaseModel):
                     StremioStream(
                         name=name,
                         description=description,
-                        url=str(transcode_url % {'videoQuality': 100}),
+                        url=_stream_url(transcode_url % {'videoQuality': 100}),
                         subtitles=external_subtitles,
                         behaviorHints={'bingeGroup': quality_description},
                     ),
@@ -341,7 +355,7 @@ class PlexMediaMeta(BaseModel):
                         StremioStream(
                             name=name,
                             description=description,
-                            url=str(transcode_url % quality_params['plex_args']),
+                            url=_stream_url(transcode_url % quality_params['plex_args']),
                             subtitles=external_subtitles,
                             behaviorHints={'bingeGroup': quality_description},
                         ),

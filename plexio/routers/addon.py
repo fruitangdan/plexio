@@ -1,8 +1,10 @@
 from itertools import chain
 from typing import Annotated
+from urllib.parse import parse_qs
 
-from aiohttp import ClientSession
-from fastapi import APIRouter, Depends, HTTPException, status
+from aiohttp import ClientSession, ClientTimeout
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response, StreamingResponse
 from redis.asyncio.client import Redis
 
 from plexio import __version__
@@ -10,6 +12,8 @@ from plexio.dependencies import (
     get_addon_configuration,
     get_cache,
     get_http_client,
+    get_public_base_url_dep,
+    get_public_streaming_base_url_dep,
     set_sentry_user,
 )
 from plexio.models import PLEX_TO_STREMIO_MEDIA_TYPE, STREMIO_TO_PLEX_MEDIA_TYPE
@@ -177,6 +181,90 @@ async def get_meta(
     return StremioMetaResponse(meta=meta)
 
 
+@router.api_route(
+    '/{installation_id}/{base64_cfg}/proxy',
+    methods=['GET', 'HEAD'],
+)
+async def proxy_to_plex(
+    request: Request,
+    http: Annotated[ClientSession, Depends(get_http_client)],
+    configuration: Annotated[AddonConfiguration, Depends(get_addon_configuration)],
+    q: str = Query(..., description='Relative path+query to Plex (without X-Plex-Token)'),
+):
+    """
+    Proxy stream/subtitle requests to the user's Plex server.
+    Supports GET (stream body) and HEAD (headers only). Stremio sends HEAD to probe the stream.
+    """
+    if not q or not q.startswith('/'):
+        q = '/' + q.lstrip('/')
+    path_part = q.split('?')[0].lstrip('/')
+    query_part = q.split('?', 1)[1] if '?' in q else ''
+    params = parse_qs(query_part, keep_blank_values=True)
+    params['X-Plex-Token'] = [configuration.access_token]
+    flat = {k: (v[0] if isinstance(v, list) else v) for k, v in params.items()}
+    target = (configuration.streaming_url / path_part).with_query(flat)
+
+    forward_headers = {}
+    if request.headers.get('range'):
+        forward_headers['Range'] = request.headers['range']
+    if request.headers.get('accept'):
+        forward_headers['Accept'] = request.headers['accept']
+
+    is_head = request.method == 'HEAD'
+
+    # No total timeout; allow 10 min between reads so large streams aren't cut off (avoids "unexpected EOF" in cloudflared)
+    proxy_timeout = ClientTimeout(total=None, sock_read=600)
+
+    try:
+        if is_head:
+            async with http.head(str(target), headers=forward_headers or None, timeout=proxy_timeout) as resp:
+                if resp.status >= 400:
+                    print(f"[proxy] HEAD Plex returned {resp.status} for {path_part[:80]}...")
+                    raise HTTPException(status_code=resp.status, detail='Upstream error')
+                response_headers = {
+                    k: v
+                    for k, v in resp.headers.items()
+                    if k.lower() in ('content-type', 'content-length', 'accept-ranges', 'content-range')
+                }
+                print(f"[proxy] HEAD {resp.status} from Plex ({path_part[:60]}...)")
+                return Response(status_code=resp.status, headers=response_headers)
+        else:
+            # Don't use async with: we must keep the aiohttp response open until the body is
+            # fully streamed. Returning StreamingResponse(resp.content) and then exiting the
+            # context manager closed the connection immediately -> "unexpected EOF" in cloudflared.
+            resp = await http.get(
+                str(target), headers=forward_headers or None, timeout=proxy_timeout
+            )
+            if resp.status >= 400:
+                await resp.release()
+                print(f"[proxy] Plex returned {resp.status} for {path_part[:80]}...")
+                raise HTTPException(status_code=resp.status, detail='Upstream error')
+            response_headers = {
+                k: v
+                for k, v in resp.headers.items()
+                if k.lower() in ('content-type', 'content-length', 'accept-ranges', 'content-range')
+            }
+            print(f"[proxy] Streaming {resp.status} from Plex ({path_part[:60]}...)")
+
+            async def stream_body():
+                try:
+                    async for chunk in resp.content.iter_chunked(64 * 1024):
+                        yield chunk
+                finally:
+                    await resp.release()
+
+            return StreamingResponse(
+                stream_body(),
+                status_code=resp.status,
+                headers=response_headers,
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[proxy] Error forwarding to Plex: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
+
+
 @router.get(
     '/{installation_id}/{base64_cfg}/stream/{stremio_type}/{media_id:path}.json',
     response_model_exclude_none=True,
@@ -185,8 +273,11 @@ async def get_stream(
     http: Annotated[ClientSession, Depends(get_http_client)],
     cache: Annotated[Redis, Depends(get_cache)],
     configuration: Annotated[AddonConfiguration, Depends(get_addon_configuration)],
+    public_streaming_base_url: Annotated[str | None, Depends(get_public_streaming_base_url_dep)],
     stremio_type: StremioMediaType,
     media_id: str,
+    installation_id: str = '',
+    base64_cfg: str = '',
 ) -> StremioStreamsResponse:
     try:
         if media_id.startswith('tt'):
@@ -217,10 +308,16 @@ async def get_stream(
         if not media:
             print(f"No media found for Plex ID: {plex_id}")
             return StremioStreamsResponse()
-        
-        print(f"Found {len(media)} media items, generating streams")
+
+        proxy_prefix = f'/{installation_id}/{base64_cfg}/proxy' if public_streaming_base_url else ''
+        print(f"Found {len(media)} media items, generating streams (streaming_base={bool(public_streaming_base_url)})")
         streams = list(chain.from_iterable(
-            meta.get_stremio_streams(configuration) for meta in media
+            meta.get_stremio_streams(
+                configuration,
+                public_base_url=public_streaming_base_url,
+                proxy_prefix=proxy_prefix,
+            )
+            for meta in media
         ))
         print(f"Generated {len(streams)} streams")
         return StremioStreamsResponse(streams=streams)

@@ -25,6 +25,7 @@ import { Icons } from '@/components/icons';
 import { Button } from '@/components/ui/button.tsx';
 import { Form } from '@/components/ui/form';
 import usePMSSections from '@/hooks/usePMSSections.tsx';
+import { getApiOrigin } from '@/lib/apiOrigin';
 
 interface Props {
   servers: PlexServer[];
@@ -154,7 +155,7 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
     }
   }, [sections, form, savedValues]);
 
-  function onSubmit(configuration: any, event: any) {
+  async function onSubmit(configuration: any, event: any) {
     configuration.version = __APP_VERSION__;
     configuration.accessToken = server?.accessToken;
     configuration.sections = configuration.sections.filter((item: any) =>
@@ -224,17 +225,44 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
     }
 
     const encodedConfiguration = base64_encode(JSON.stringify(configuration));
-    
+
     // Check if we're in Electron
     const isElectron = (window as any).__ELECTRON__ === true;
     const backendPort = isElectron ? 8000 : 80; // Electron uses 8000, Docker uses 80 (nginx)
-    
-    // Use the Mac's IP address for the addon URL so FireTV and other devices can access it
-    // Priority: discoveryUrl > streamingUrl > server connections > current host
+
+    // Public base URL for remote access (Cloudflare Tunnel / PUBLIC_BASE_URL)
+    // Priority: API (backend env/headers) > current origin if public > LAN IP detection
     let addonOrigin = '';
     let detectedIp = '';
-    
+
     try {
+      // Prefer public base URL from backend (set when behind Cloudflare or PUBLIC_BASE_URL)
+      const apiOrigin = getApiOrigin();
+      const publicBaseRes = await fetch(`${apiOrigin}/api/v1/public-base-url`);
+      if (publicBaseRes.ok) {
+        const data = await publicBaseRes.json();
+        if (data.publicBaseUrl) {
+          addonOrigin = String(data.publicBaseUrl).replace(/\/$/, '');
+          console.log('Using public base URL from backend:', addonOrigin);
+        }
+      }
+      // If loaded from a public origin (e.g. https://plexio.fruitangdan.com), use it
+      if (!addonOrigin && typeof window !== 'undefined') {
+        const host = window.location.hostname;
+        const isPrivate =
+          !host ||
+          host === 'localhost' ||
+          host === '127.0.0.1' ||
+          /^10\./.test(host) ||
+          /^192\.168\./.test(host) ||
+          /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+        if (!isPrivate) {
+          addonOrigin = window.location.origin;
+          console.log('Using current origin as public base:', addonOrigin);
+        }
+      }
+      // Fallback: LAN IP detection for local/FireTV
+      if (!addonOrigin) {
       // Method 1: Extract IP from discovery URL (highest priority - most reliable)
       if (configuration.discoveryUrl) {
         try {
@@ -298,9 +326,10 @@ const ConfigurationForm: FC<Props> = ({ servers }) => {
           'Please check your discovery URL contains a valid IP address (e.g., http://192.168.x.x:32400)'
         );
       }
+      } // end fallback LAN detection
     } catch (e) {
-      console.error('Failed to determine network IP:', e);
-      addonOrigin = `http://localhost:${backendPort}`;
+      console.error('Failed to determine addon origin:', e);
+      if (!addonOrigin) addonOrigin = `http://localhost:${backendPort}`;
     }
     
     const addonUrl = `${addonOrigin}/${uuidv4()}/${encodedConfiguration}/manifest.json`;

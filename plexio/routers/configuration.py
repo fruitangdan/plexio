@@ -4,11 +4,22 @@ from aiohttp import ClientSession
 from fastapi import APIRouter, Depends
 from yarl import URL
 
-from plexio.dependencies import get_http_client
+from plexio.dependencies import get_http_client, get_public_base_url_dep
 from plexio.plex.media_server_api import check_server_connection
 from plexio.plex.utils import get_json
 
 router = APIRouter(prefix='/api/v1')
+
+
+@router.get('/public-base-url')
+async def get_public_base_url(
+    public_base_url: Annotated[str | None, Depends(get_public_base_url_dep)],
+):
+    """
+    Return the public base URL when behind Cloudflare or PUBLIC_BASE_URL is set.
+    Used by the config page so "Copy Manifest URL" uses the public domain.
+    """
+    return {'publicBaseUrl': public_base_url}
 
 
 @router.get('/test-connection')

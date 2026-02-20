@@ -147,6 +147,11 @@ function startBackend() {
         RESOURCES_PATH: resourcesPath, // Pass Resources path to backend
         HOST: '0.0.0.0', // Listen on all interfaces
         PORT: BACKEND_PORT.toString(), // Backend port
+        // Hardcoded public URL for packaged app so stream/manifest URLs work via Cloudflare Tunnel.
+        // Single domain: manifest and proxy (stream) URLs both use PUBLIC_BASE_URL.
+        ...(isProduction ? {
+            PUBLIC_BASE_URL: 'https://plexio.fruitangdan.com',
+        } : {}),
     };
 
     console.log('Backend environment variables:', {
@@ -155,6 +160,8 @@ function startBackend() {
         RESOURCES_PATH: backendEnv.RESOURCES_PATH,
         HOST: backendEnv.HOST,
         PORT: backendEnv.PORT,
+        PUBLIC_BASE_URL: backendEnv.PUBLIC_BASE_URL || '(not set)',
+        PUBLIC_STREAMING_BASE_URL: backendEnv.PUBLIC_STREAMING_BASE_URL || '(not set)',
     });
 
     backendProcess = spawn(backendPath, args, {
@@ -470,7 +477,7 @@ mb.on('ready', () => {
             type: 'separator',
         },
         {
-            label: 'Quit',
+            label: 'Quit Plexio',
             click: () => {
                 // Kill backend process first
                 if (backendProcess) {

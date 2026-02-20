@@ -1,6 +1,6 @@
 {
     "name": "plexio",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Plexio: Plex Integration for Stremio - Standalone Mac App",
     "main": "electron/main.js",
     "scripts": {
@@ -12,6 +12,7 @@
         "build:backend": "python3 -m pip install --quiet pyinstaller && pyinstaller --clean --noconfirm --workpath build --distpath dist/backend electron/backend.spec",
         "build": "npm run electron:build",
         "release": "node scripts/release.js",
+        "mac:install": "bash scripts/install-plexio-mac-mini.sh",
         "postinstall": "electron-builder install-app-deps"
     },
     "build": {
